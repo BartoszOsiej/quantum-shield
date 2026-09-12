@@ -165,3 +165,8 @@ MIT
 ## 📺 Demo
 
 ![pqguard Demo](assets/pqguard-demo.gif)
+## Deep Dives
+
+Extended dossiers (architecture, verification, benchmarks, error codex) ship in this repo:
+- [SECURITY.md](SECURITY.md)
+- [ARCHITECTURE-NOTES.md](ARCHITECTURE-NOTES.md)
