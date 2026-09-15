@@ -25,7 +25,6 @@ pub fn encrypt_file(
         .map(|p| keyfile::load_public_key(p))
         .collect::<Result<Vec<_>>>()?;
 
-    let data_len;
     let envelope_bytes = if recipient_pks.len() == 1 {
         // Single recipient → classic v1 envelope (unchanged format)
         let salt = crypto::generate_salt();
@@ -33,7 +32,6 @@ pub fn encrypt_file(
         let (shared_secret, kem_ciphertext) = crypto::kem_encapsulate(&recipient_pks[0])?;
         let symmetric_key = crypto::derive_key(&shared_secret, &salt)?;
         let encrypted_data = crypto::symmetric_encrypt(&symmetric_key, &nonce, &plaintext)?;
-        data_len = encrypted_data.len();
         crypto::SealedEnvelope {
             kem_ciphertext,
             symmetric_nonce: nonce,
@@ -43,9 +41,7 @@ pub fn encrypt_file(
         .to_bytes()
     } else {
         // Multiple recipients → v2 envelope, one independent block each
-        let envelope = crypto::MultiEnvelope::seal(&recipient_pks, &plaintext)?;
-        data_len = plaintext.len() * envelope.recipients.len();
-        envelope.to_bytes()
+        crypto::MultiEnvelope::seal(&recipient_pks, &plaintext)?.to_bytes()
     };
 
     let out_path = match output_path {
