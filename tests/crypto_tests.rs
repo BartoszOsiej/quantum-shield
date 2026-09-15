@@ -412,7 +412,9 @@ fn v1_and_v2_envelopes_are_distinguishable() {
     let v1 = encrypt_bytes(&ek, b"v1").unwrap().to_bytes();
     assert_eq!(v1[4], 1);
 
-    let v2 = MultiEnvelope::seal(&[ek.clone()], b"v2").unwrap().to_bytes();
+    let v2 = MultiEnvelope::seal(&[ek.clone()], b"v2")
+        .unwrap()
+        .to_bytes();
     assert_eq!(v2[4], 2);
 
     // v1 parser must reject v2 and vice versa

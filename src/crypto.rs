@@ -314,9 +314,11 @@ impl MultiEnvelope {
                 Ok(k) => k,
                 Err(_) => continue,
             };
-            if let Ok(plaintext) =
-                symmetric_decrypt(&symmetric_key, &block.symmetric_nonce, &block.encrypted_data)
-            {
+            if let Ok(plaintext) = symmetric_decrypt(
+                &symmetric_key,
+                &block.symmetric_nonce,
+                &block.encrypted_data,
+            ) {
                 return Ok(plaintext);
             }
             let _ = i;
