@@ -29,6 +29,9 @@ pqguard keygen
 # Encrypt a file
 pqguard encrypt secret.txt --recipient public_key.pqg.pub
 
+# Multi-recipient (any of the listed private keys can decrypt)
+pqguard encrypt secret.txt -r alice.pqg.pub -r bob.pqg.pub
+
 # Decrypt
 pqguard decrypt secret.pqg --private-key private_key.pqg.key
 ```

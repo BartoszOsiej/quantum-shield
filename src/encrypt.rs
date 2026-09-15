@@ -8,7 +8,7 @@ use crate::keyfile;
 
 pub fn encrypt_file(
     input_path: &str,
-    recipient_pubkey_path: &str,
+    recipient_pubkey_paths: &[String],
     output_path: Option<&str>,
     _sender_key_path: Option<&str>,
 ) -> Result<PathBuf> {
@@ -16,24 +16,38 @@ pub fn encrypt_file(
     if plaintext.is_empty() {
         bail!("Input file is empty");
     }
+    if recipient_pubkey_paths.is_empty() {
+        bail!("At least one recipient is required");
+    }
 
-    let recipient_pk = keyfile::load_public_key(recipient_pubkey_path)?;
-    let salt = crypto::generate_salt();
-    let nonce = crypto::generate_nonce();
+    let recipient_pks: Vec<Vec<u8>> = recipient_pubkey_paths
+        .iter()
+        .map(|p| keyfile::load_public_key(p))
+        .collect::<Result<Vec<_>>>()?;
 
-    let (shared_secret, kem_ciphertext) = crypto::kem_encapsulate(&recipient_pk)?;
-    let symmetric_key = crypto::derive_key(&shared_secret, &salt)?;
-    let encrypted_data = crypto::symmetric_encrypt(&symmetric_key, &nonce, &plaintext)?;
-
-    let data_len = encrypted_data.len();
-    let envelope = crypto::SealedEnvelope {
-        kem_ciphertext,
-        symmetric_nonce: nonce,
-        salt,
-        encrypted_data,
+    let data_len;
+    let envelope_bytes = if recipient_pks.len() == 1 {
+        // Single recipient → classic v1 envelope (unchanged format)
+        let salt = crypto::generate_salt();
+        let nonce = crypto::generate_nonce();
+        let (shared_secret, kem_ciphertext) = crypto::kem_encapsulate(&recipient_pks[0])?;
+        let symmetric_key = crypto::derive_key(&shared_secret, &salt)?;
+        let encrypted_data = crypto::symmetric_encrypt(&symmetric_key, &nonce, &plaintext)?;
+        data_len = encrypted_data.len();
+        crypto::SealedEnvelope {
+            kem_ciphertext,
+            symmetric_nonce: nonce,
+            salt,
+            encrypted_data,
+        }
+        .to_bytes()
+    } else {
+        // Multiple recipients → v2 envelope, one independent block each
+        let envelope = crypto::MultiEnvelope::seal(&recipient_pks, &plaintext)?;
+        data_len = plaintext.len() * envelope.recipients.len();
+        envelope.to_bytes()
     };
 
-    let envelope_bytes = envelope.to_bytes();
     let out_path = match output_path {
         Some(p) => PathBuf::from(p),
         None => {
@@ -45,13 +59,16 @@ pub fn encrypt_file(
 
     fs::write(&out_path, &envelope_bytes)?;
 
-    let ratio = (data_len as f64 / plaintext.len() as f64) * 100.0;
     println!(
-        "   {} {} bytes → {} bytes ({:.1}%)",
+        "   {} {} recipient(s)",
+        "Recipients:".dimmed(),
+        recipient_pks.len()
+    );
+    println!(
+        "   {} {} bytes → {} bytes",
         "Size:".dimmed(),
         plaintext.len(),
-        data_len,
-        ratio
+        envelope_bytes.len()
     );
     println!("   {} {}", "KEM:".dimmed(), crypto::KEM_ALG);
     println!("   {} {}", "Cipher:".dimmed(), crypto::SYMMETRIC_ALG);

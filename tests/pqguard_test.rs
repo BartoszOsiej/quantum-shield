@@ -232,3 +232,61 @@ fn test_binary_file() {
     let decrypted = fs::read(&output_file).unwrap();
     assert_eq!(decrypted, binary_data);
 }
+
+// Multi-recipient end-to-end: two recipients, both can decrypt
+#[test]
+fn test_multi_recipient_cycle() {
+    let dir = tempdir().unwrap();
+    let dir_path = dir.path();
+    let bin = env!("CARGO_BIN_EXE_pqguard");
+
+    for name in ["alice", "bob"] {
+        let output = std::process::Command::new(bin)
+            .args(["keygen", "-o", &dir_path.to_string_lossy(), "-n", name])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    }
+
+    let test_file = dir_path.join("shared.txt");
+    fs::write(&test_file, b"readable by both").unwrap();
+
+    let output = std::process::Command::new(bin)
+        .args([
+            "encrypt",
+            &test_file.to_string_lossy(),
+            "-r",
+            &dir_path.join("alice.pqg.pub").to_string_lossy(),
+            "-r",
+            &dir_path.join("bob.pqg.pub").to_string_lossy(),
+            "-o",
+            &dir_path.join("shared.pqg").to_string_lossy(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "multi-encrypt failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for (name, out) in [("alice", "from_alice.txt"), ("bob", "from_bob.txt")] {
+        let output = std::process::Command::new(bin)
+            .args([
+                "decrypt",
+                &dir_path.join("shared.pqg").to_string_lossy(),
+                "-p",
+                &dir_path.join(format!("{name}.pqg.key")).to_string_lossy(),
+                "-o",
+                &dir_path.join(out).to_string_lossy(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "decrypt as {name} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(dir_path.join(out)).unwrap(), b"readable by both");
+    }
+}

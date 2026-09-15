@@ -349,3 +349,74 @@ fn multiple_encryptions_with_same_key() {
         assert_eq!(decrypted, msg.as_bytes());
     }
 }
+
+// ── Multi-recipient (v2 envelope) ───────────────────────────
+
+#[test]
+fn multi_envelope_roundtrip_all_recipients() {
+    let keys: Vec<(Vec<u8>, Vec<u8>)> = (0..3).map(|_| generate_kem_keypair().unwrap()).collect();
+    let eks: Vec<Vec<u8>> = keys.iter().map(|(ek, _)| ek.clone()).collect();
+
+    let envelope = MultiEnvelope::seal(&eks, b"shared secret message").unwrap();
+    assert_eq!(envelope.recipients.len(), 3);
+
+    for (_, dk) in &keys {
+        let pt = envelope.open(dk).unwrap();
+        assert_eq!(pt, b"shared secret message");
+    }
+}
+
+#[test]
+fn multi_envelope_rejects_wrong_key() {
+    let (ek1, _) = generate_kem_keypair().unwrap();
+    let (_, dk_other) = generate_kem_keypair().unwrap();
+
+    let envelope = MultiEnvelope::seal(&[ek1], b"for your eyes only").unwrap();
+    assert!(envelope.open(&dk_other).is_err());
+}
+
+#[test]
+fn multi_envelope_serialization_roundtrip() {
+    let (ek, dk) = generate_kem_keypair().unwrap();
+    let envelope = MultiEnvelope::seal(&[ek], b"bytes test").unwrap();
+
+    let bytes = envelope.to_bytes();
+    assert_eq!(&bytes[0..4], b"PQGR");
+    assert_eq!(bytes[4], 2);
+
+    let parsed = MultiEnvelope::from_bytes(&bytes).unwrap();
+    assert_eq!(parsed.open(&dk).unwrap(), b"bytes test");
+}
+
+#[test]
+fn multi_envelope_rejects_truncated_and_extended() {
+    let (ek, _) = generate_kem_keypair().unwrap();
+    let bytes = MultiEnvelope::seal(&[ek], b"x").unwrap().to_bytes();
+
+    assert!(MultiEnvelope::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+    let mut extended = bytes.clone();
+    extended.push(0);
+    assert!(MultiEnvelope::from_bytes(&extended).is_err());
+    assert!(MultiEnvelope::from_bytes(&bytes[..10]).is_err());
+}
+
+#[test]
+fn multi_envelope_empty_recipients_fails() {
+    assert!(MultiEnvelope::seal(&[], b"nobody").is_err());
+}
+
+#[test]
+fn v1_and_v2_envelopes_are_distinguishable() {
+    let (ek, dk) = generate_kem_keypair().unwrap();
+
+    let v1 = encrypt_bytes(&ek, b"v1").unwrap().to_bytes();
+    assert_eq!(v1[4], 1);
+
+    let v2 = MultiEnvelope::seal(&[ek.clone()], b"v2").unwrap().to_bytes();
+    assert_eq!(v2[4], 2);
+
+    // v1 parser must reject v2 and vice versa
+    assert!(SealedEnvelope::from_bytes(&v2).is_err());
+    let v2_parsed = MultiEnvelope::from_bytes(&v2).unwrap();
+    assert_eq!(v2_parsed.open(&dk).unwrap(), b"v2");
+}

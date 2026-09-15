@@ -36,9 +36,9 @@ enum Commands {
         /// Input file to encrypt
         input: String,
 
-        /// Recipient's public key file
-        #[arg(short, long)]
-        recipient: String,
+        /// Recipient's public key file (repeat for multi-recipient encryption)
+        #[arg(short, long = "recipient", value_name = "KEYFILE")]
+        recipient: Vec<String>,
 
         /// Output file (default: input.pqg)
         #[arg(short, long)]

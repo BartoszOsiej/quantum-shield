@@ -186,3 +186,144 @@ pub fn decrypt_bytes(dk_bytes: &[u8], envelope: &SealedEnvelope) -> Result<Vec<u
         &envelope.encrypted_data,
     )
 }
+
+/// One self-contained per-recipient block of a multi-recipient envelope.
+#[derive(Debug, Clone)]
+pub struct RecipientBlock {
+    pub kem_ciphertext: Vec<u8>,
+    pub salt: [u8; SALT_LEN],
+    pub symmetric_nonce: [u8; NONCE_LEN],
+    pub encrypted_data: Vec<u8>,
+}
+
+/// Multi-recipient envelope (format v2).
+///
+/// The plaintext is encrypted independently for each recipient (fresh salt
+/// + nonce per block), so any one recipient's private key suffices to
+/// decrypt. Parsing never trusts lengths blindly and rejects trailing data.
+#[derive(Debug, Clone)]
+pub struct MultiEnvelope {
+    pub recipients: Vec<RecipientBlock>,
+}
+
+impl MultiEnvelope {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"PQGR");
+        out.push(2);
+        out.extend_from_slice(&(self.recipients.len() as u32).to_le_bytes());
+        for block in &self.recipients {
+            out.extend_from_slice(&(block.kem_ciphertext.len() as u32).to_le_bytes());
+            out.extend_from_slice(&block.kem_ciphertext);
+            out.extend_from_slice(&block.salt);
+            out.extend_from_slice(&block.symmetric_nonce);
+            out.extend_from_slice(&(block.encrypted_data.len() as u64).to_le_bytes());
+            out.extend_from_slice(&block.encrypted_data);
+        }
+        out
+    }
+
+    pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        let mut pos = 0;
+        if data.len() < 4 + 1 + 4 {
+            bail!("File too small to be a valid pqguard file");
+        }
+        if &data[0..4] != b"PQGR" {
+            bail!("Not a pqguard file");
+        }
+        pos += 4;
+        if data[pos] != 2 {
+            bail!("Unsupported version");
+        }
+        pos += 1;
+        let count = u32::from_le_bytes(data[pos..pos + 4].try_into()?) as usize;
+        pos += 4;
+        if count == 0 {
+            bail!("Envelope has no recipients");
+        }
+
+        let mut recipients = Vec::with_capacity(count.min(1024));
+        for _ in 0..count {
+            if pos + 4 > data.len() {
+                bail!("Truncated recipient block");
+            }
+            let kem_len = u32::from_le_bytes(data[pos..pos + 4].try_into()?) as usize;
+            pos += 4;
+            if pos + kem_len + SALT_LEN + NONCE_LEN + 8 > data.len() {
+                bail!("Truncated recipient block");
+            }
+            let kem_ciphertext = data[pos..pos + kem_len].to_vec();
+            pos += kem_len;
+            let mut salt = [0u8; SALT_LEN];
+            salt.copy_from_slice(&data[pos..pos + SALT_LEN]);
+            pos += SALT_LEN;
+            let mut symmetric_nonce = [0u8; NONCE_LEN];
+            symmetric_nonce.copy_from_slice(&data[pos..pos + NONCE_LEN]);
+            pos += NONCE_LEN;
+            let data_len = u64::from_le_bytes(data[pos..pos + 8].try_into()?) as usize;
+            pos += 8;
+            if pos + data_len > data.len() {
+                bail!("Truncated encrypted data");
+            }
+            let encrypted_data = data[pos..pos + data_len].to_vec();
+            pos += data_len;
+            recipients.push(RecipientBlock {
+                kem_ciphertext,
+                salt,
+                symmetric_nonce,
+                encrypted_data,
+            });
+        }
+        if pos != data.len() {
+            bail!("Trailing garbage after envelope");
+        }
+        Ok(MultiEnvelope { recipients })
+    }
+
+    /// Encrypt the plaintext once per recipient encapsulation key.
+    pub fn seal(ek_bytes_list: &[Vec<u8>], plaintext: &[u8]) -> Result<Self> {
+        if ek_bytes_list.is_empty() {
+            bail!("At least one recipient is required");
+        }
+        let mut recipients = Vec::with_capacity(ek_bytes_list.len());
+        for ek in ek_bytes_list {
+            let salt = generate_salt();
+            let nonce = generate_nonce();
+            let (shared_secret, kem_ciphertext) = kem_encapsulate(ek)?;
+            let symmetric_key = derive_key(&shared_secret, &salt)?;
+            let encrypted_data = symmetric_encrypt(&symmetric_key, &nonce, plaintext)?;
+            recipients.push(RecipientBlock {
+                kem_ciphertext,
+                salt,
+                symmetric_nonce: nonce,
+                encrypted_data,
+            });
+        }
+        Ok(MultiEnvelope { recipients })
+    }
+
+    /// Try every recipient block with this private key; the block whose
+    /// KEM ciphertext matches succeeds (wrong keys fail GCM authentication).
+    pub fn open(&self, dk_bytes: &[u8]) -> Result<Vec<u8>> {
+        for (i, block) in self.recipients.iter().enumerate() {
+            let shared_secret = match kem_decapsulate(dk_bytes, &block.kem_ciphertext) {
+                Ok(ss) => ss,
+                Err(_) => continue,
+            };
+            let symmetric_key = match derive_key(&shared_secret, &block.salt) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            if let Ok(plaintext) =
+                symmetric_decrypt(&symmetric_key, &block.symmetric_nonce, &block.encrypted_data)
+            {
+                return Ok(plaintext);
+            }
+            let _ = i;
+        }
+        bail!(
+            "None of the {} recipient blocks match this private key",
+            self.recipients.len()
+        );
+    }
+}
