@@ -1,40 +1,32 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Supported versions
 
-If you discover a security vulnerability in pqguard, please report it responsibly:
+Only the latest `main` branch is supported with security fixes.
 
-1. **Do NOT** open a public GitHub issue
-2. Use [GitHub Security Advisories](https://github.com/BartoszOsiej/pqguard/security/advisories/new)
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
+## Reporting a vulnerability
 
-## Response Timeline
+**Do NOT open a public issue for security reports.**
 
-- **Acknowledgment**: Within 48 hours
-- **Assessment**: Within 1 week
-- **Fix**: Depends on severity, typically within 2 weeks
+Email: thethreadcalls@outlook.com (hartwell-labs, monitored by the maintainer)
+
+Include: affected component, reproduction steps, impact assessment. You will get
+an initial response within 72 hours. If confirmed, a fix timeline is agreed with
+you and credit is given in the release notes (unless you prefer otherwise).
 
 ## Scope
 
-The following are in scope:
-- Cryptographic vulnerabilities in the encryption/decapsulation logic
-- Key handling vulnerabilities
-- Authentication bypass
-- Memory safety issues
+- Kernel-facing code (eBPF probes, LSM hooks): highest priority
+- CLI/parsing layers: high
+- Documentation/site: low
 
-The following are out of scope:
-- Denial of service
-- Issues in dependencies (report upstream)
+## Safe harbor
 
-## Cryptographic Guarantees
+Good-faith research and coordinated disclosure is welcomed and will not be
+pursued legally, provided you give us a reasonable window to ship a fix.
 
-pqguard uses:
-- ML-KEM-768 (NIST FIPS 203) for key encapsulation
-- AES-256-GCM (NIST SP 800-38D) for symmetric encryption
-- HKDF-SHA256 (RFC 5869) for key derivation
+## Hardening notes
 
-These are NIST-standardized algorithms with formal security proofs.
+This project ships with CI-enforced builds, pinned toolchains and automated
+test sweeps (see `.github/workflows/`). Fuzz targets live alongside the parser
+modules where applicable.
