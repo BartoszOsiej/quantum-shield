@@ -198,8 +198,8 @@ pub struct RecipientBlock {
 
 /// Multi-recipient envelope (format v2).
 ///
-/// The plaintext is encrypted independently for each recipient (fresh salt
-/// + nonce per block), so any one recipient's private key suffices to
+/// The plaintext is encrypted independently for each recipient (fresh
+/// salt + nonce per block), so any one recipient's private key suffices to
 /// decrypt. Parsing never trusts lengths blindly and rejects trailing data.
 #[derive(Debug, Clone)]
 pub struct MultiEnvelope {

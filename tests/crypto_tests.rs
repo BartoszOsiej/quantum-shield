@@ -52,7 +52,7 @@ fn kem_different_encapsulations_produce_different_ciphertexts() {
 #[test]
 fn kem_decapsulate_with_wrong_key_produces_wrong_secret() {
     let (ek1, _dk1) = generate_kem_keypair().unwrap();
-    let (ek2, dk2) = generate_kem_keypair().unwrap();
+    let (_ek2, dk2) = generate_kem_keypair().unwrap();
     let (ss1, ct1) = kem_encapsulate(&ek1).unwrap();
     // wrong key → different shared secret (ML-KEM doesn't error, just wrong SS)
     let ss2 = kem_decapsulate(&dk2, &ct1).unwrap();
@@ -412,7 +412,7 @@ fn v1_and_v2_envelopes_are_distinguishable() {
     let v1 = encrypt_bytes(&ek, b"v1").unwrap().to_bytes();
     assert_eq!(v1[4], 1);
 
-    let v2 = MultiEnvelope::seal(&[ek.clone()], b"v2")
+    let v2 = MultiEnvelope::seal(std::slice::from_ref(&ek), b"v2")
         .unwrap()
         .to_bytes();
     assert_eq!(v2[4], 2);
